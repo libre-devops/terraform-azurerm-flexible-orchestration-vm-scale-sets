@@ -11,15 +11,6 @@ locals {
   }
 }
 
-#
-#module "subnet_calculator" {
-#  source = "libre-devops/subnet-calculator/null"
-#
-#  base_cidr    = local.lookup_cidr[var.short][var.env][0]
-#  subnet_sizes = [24] # Automatic naming as subnet1, subnet2, subnet3
-#}
-#
-
 module "subnet_calculator" {
   source = "libre-devops/subnet-calculator/null"
 
@@ -137,18 +128,94 @@ module "windows_vm_scale_set" {
   scale_sets = [
     {
 
-      name = local.name
+      name                        = "${local.name}win"
+      instances                   = 1
+      sku                         = "Standard_B2ms"
+      platform_fault_domain_count = 1
 
-      computer_name_prefix            = "vmss1"
-      admin_username                  = "Local${title(var.short)}${title(var.env)}Admin"
-      admin_password                  = data.azurerm_key_vault_secret.admin_pwd.value
-      instances                       = 1
-      sku                             = "Standard_B2ms"
-      vm_os_simple                    = "WindowsServer2022AzureEditionGen2"
-      disable_password_authentication = true
-      overprovision                   = true
-      upgrade_mode                    = "Manual"
-      create_asg                      = true
+
+      os_profile = {
+        windows_configuration = {
+          admin_username           = "Local${title(var.short)}${title(var.env)}Admin"
+          admin_password           = data.azurerm_key_vault_secret.admin_pwd.value
+          computer_name_prefix     = "vmss1"
+          enable_automatic_updates = true
+          hotpatching_enabled      = false
+          patch_mode               = "AutomaticByPlatform"
+          patch_assessment_mode    = "AutomaticByPlatform"
+          provision_vm_agent       = true
+          timezone                 = "GMT Standard Time"
+        }
+      }
+
+      vm_os_simple = "WindowsServer2022AzureEditionGen2"
+      create_asg   = true
+
+      identity_type = "SystemAssigned, UserAssigned"
+      identity_ids  = [azurerm_user_assigned_identity.server_uid.id]
+      network_interface = [
+        {
+          name                          = "nic-${local.name}"
+          primary                       = true
+          enable_accelerated_networking = false
+          ip_configuration = [
+            {
+              name                           = "ipconfig-${local.name}"
+              primary                        = true
+              subnet_id                      = module.network.subnets_ids["subnet1"]
+              application_security_group_ids = [azurerm_application_security_group.server_asg.id]
+            }
+          ]
+        }
+      ]
+      os_disk = {
+        caching              = "ReadWrite"
+        storage_account_type = "StandardSSD_LRS"
+        disk_size_gb         = 127
+      }
+
+      extension = [
+        {
+          name                       = "run-command-${local.name}"
+          publisher                  = "Microsoft.CPlat.Core"
+          type                       = "RunCommandWindows"
+          type_handler_version       = "1.1"
+          auto_upgrade_minor_version = true
+          settings = jsonencode({
+            script = [
+              "try { Install-WindowsFeature -Name FS-FileServer -IncludeManagementTools } catch { Write-Error 'Failed to install File Services: $_'; exit 1 }"
+            ]
+          })
+        }
+      ]
+    },
+    {
+
+      name                        = "${local.name}lnx"
+      instances                   = 1
+      sku                         = "Standard_B2ms"
+      platform_fault_domain_count = 1
+
+
+      os_profile = {
+        linux_configuration = {
+          admin_username                  = "Local${title(var.short)}${title(var.env)}Admin"
+          disable_password_authentication = true
+
+          admin_ssh_key = {
+            public_key = data.azurerm_ssh_public_key.mgmt_ssh_key.public_key
+          }
+
+          computer_name_prefix  = "vmss2"
+          patch_mode            = "AutomaticByPlatform"
+          patch_assessment_mode = "AutomaticByPlatform"
+          provision_vm_agent    = true
+          timezone              = "GMT Standard Time"
+        }
+      }
+
+      vm_os_simple = "WindowsServer2022AzureEditionGen2"
+      create_asg   = true
 
       identity_type = "SystemAssigned, UserAssigned"
       identity_ids  = [azurerm_user_assigned_identity.server_uid.id]
