@@ -1,88 +1,120 @@
 ```hcl
-resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
-  for_each            = { for vm in var.scale_sets : vm.name => vm }
-  name                = each.value.name
-  resource_group_name = var.rg_name
-  location            = var.location
-  tags                = var.tags
-  admin_username      = each.value.admin_username
-  admin_password      = each.value.admin_password
+resource "azurerm_orchestrated_virtual_machine_scale_set" "scale_set" {
+  for_each                     = { for vm in var.scale_sets : vm.name => vm }
+  name                         = each.value.name
+  resource_group_name          = var.rg_name
+  location                     = var.location
+  tags                         = var.tags
+  platform_fault_domain_count  = each.value.platform_fault_domain_count
+  instances                    = try(each.value.instances, null)
+  sku_name                     = try(each.value.sku, null)
+  max_bid_price                = each.value.max_bid_price
+  priority                     = each.value.priority
+  user_data_base64             = each.value.user_data_base64
+  proximity_placement_group_id = each.value.proximity_placement_group_id
+  zone_balance                 = each.value.zone_balance
+  zones                        = each.value.zones
+  single_placement_group       = each.value.single_placement_group
+  source_image_id              = try(each.value.use_custom_image, null) == true ? each.value.custom_source_image_id : null
+  encryption_at_host_enabled   = each.value.encryption_at_host_enabled
 
-  computer_name_prefix                              = try(each.value.computer_name_prefix, null)
-  edge_zone                                         = try(each.value.edge_zone, null)
-  instances                                         = try(each.value.instances, null)
-  sku                                               = try(each.value.sku, null)
-  custom_data                                       = try(each.value.custom_data, null)
-  do_not_run_extensions_on_overprovisioned_machines = try(each.value.do_not_run_extensions_on_overprovisioned_machines, null)
-  extensions_time_budget                            = try(each.value.do_not_run_extensions_on_overprovisioned_machines, null)
-  priority                                          = try(each.value.priority, null)
-  max_bid_price                                     = try(each.value.max_bid_price, null)
-  eviction_policy                                   = try(each.value.eviction_policy, null)
-  timezone                                          = each.value.timezone
-  health_probe_id                                   = try(each.value.health_probe_id, null)
-  overprovision                                     = try(each.value.overprovision, true)
-  platform_fault_domain_count                       = try(each.value.platform_fault_domain_count, null)
-  upgrade_mode                                      = try(each.value.upgrade_mode, null)
-  proximity_placement_group_id                      = try(each.value.proximity_placement_group_id, null)
-  scale_in_policy                                   = try(each.value.scale_in_policy, null)
-  secure_boot_enabled                               = try(each.value.secure_boot_enabled, null)
-  user_data                                         = each.value.user_date
-  single_placement_group                            = try(each.value.single_placement_group, null)
-  source_image_id                                   = try(each.value.use_custom_image, null) == true ? each.value.custom_source_image_id : null
-  vtpm_enabled                                      = try(each.value.vtpm_enabled, null)
-  zone_balance                                      = try(each.value.zone_balance, null)
-  zones                                             = tolist(try(each.value.zones, null))
-  enable_automatic_updates                          = each.value.enable_automatic_updates
-  extension_operations_enabled                      = each.value.extension_operations_enabled
-  host_group_id                                     = each.value.host_group_id
-  license_type                                      = each.value.license_type
-
-  #checkov:skip=CKV_AZURE_151:Ensure Encryption at host is enabled
-  encryption_at_host_enabled = try(each.value.encryption_at_host_enabled, null)
-
-  #checkov:skip=CKV_AZURE_50:Ensure Virtual Machine extensions are not installed
-  provision_vm_agent = try(each.value.provision_vm_agent, null)
-
-  dynamic "spot_restore" {
-    for_each = each.value.spot_restore != null ? [each.value.spot_restore] : []
+  dynamic "os_profile" {
+    for_each = each.value.os_profile != null ? [each.value.os_profile] : []
     content {
+      custom_data = os_profile.value.custom_data
 
+      dynamic "windows_configuration" {
+        for_each = os_profile.value.windows_configuration != null ? [os_profile.value.windows_configuration] : []
+        content {
+          admin_username           = windows_configuration.value.admin_username
+          admin_password           = windows_configuration.value.admin_password
+          computer_name_prefix     = windows_configuration.value.computer_name_prefix
+          enable_automatic_updates = windows_configuration.value.enable_automatic_updates
+          hotpatching_enabled      = windows_configuration.value.hotpatching_enabled
+          patch_assessment_mode    = windows_configuration.value.patch_assessment_mode
+          patch_mode               = windows_configuration.value.patch_mode
+          provision_vm_agent       = windows_configuration.value.provision_vm_agent
+          timezone                 = windows_configuration.value.timezone
+
+          #Bug? Unexpected but docs say it is
+          #          dynamic "additional_unattend_content" {
+          #            for_each = windows_configuration.additional_unattend_content != null ? windows_configuration.value.additional_unattend_content : []
+          #            content {
+          #              content = additional_unattend_content.value.content
+          #              setting = additional_unattend_content.value.setting
+          #            }
+          #          }
+
+          dynamic "winrm_listener" {
+            for_each = windows_configuration.value.winrm_listener != null ? windows_configuration.value.winrm_listener : []
+            content {
+              protocol        = winrm_listener.value.protocol
+              certificate_url = winrm_listener.value.certificate_url
+            }
+          }
+
+          dynamic "secret" {
+            for_each = windows_configuration.value.secret != null ? windows_configuration.value.secret : []
+            content {
+              key_vault_id = secret.value.key_vault_id
+
+              dynamic "certificate" {
+                for_each = secret.value.certificate
+                content {
+                  store = certificate.value.store
+                  url   = certificate.value.url
+                }
+              }
+            }
+          }
+        }
+      }
+
+      dynamic "linux_configuration" {
+        for_each = os_profile.value.linux_configuration != null ? [os_profile.linux_configuration] : []
+        content {
+          admin_username                  = linux_configuration.value.admin_username
+          admin_password                  = linux_configuration.value.admin_ssh_key != null && linux_configuration.value.disable_password_authentication == true ? null : linux_configuration.value.admin_password
+          computer_name_prefix            = linux_configuration.value.computer_name_prefix
+          disable_password_authentication = linux_configuration.value.disable_password_authentication
+          patch_assessment_mode           = linux_configuration.value.patch_assessment_mode
+          patch_mode                      = linux_configuration.value.patch_mode
+          provision_vm_agent              = linux_configuration.value.provision_vm_agent
+
+          dynamic "admin_ssh_key" {
+            for_each = linux_configuration.value.admin_ssh_key != null ? [linux_configuration.value.admin_ssh_key] : []
+            content {
+              public_key = admin_ssh_key.value.public_key
+              username   = admin_ssh_key.value.username != null ? admin_ssh_key.value.username : linux_configuration.value.admin_username
+            }
+          }
+
+          dynamic "secret" {
+            for_each = linux_configuration.value.secret != null ? linux_configuration.value.secret : []
+            content {
+              key_vault_id = secret.value.key_vault_id
+
+              dynamic "certificate" {
+                for_each = secret.value.certificate
+                content {
+                  url = certificate.value.url
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
-  dynamic "scale_in" {
-    for_each = each.value.scale_in != null ? [each.value.scale_in] : []
+  dynamic "priority_mix" {
+    for_each = each.value.priority_mix != null ? [each.value.priority_mix] : []
     content {
-
-      rule                   = scale_in.value.rule
-      force_deletion_enabled = scale_in.value.force_deletion_enabled
-
+      base_regular_count            = priority_mix.value.base_regular_count
+      regular_percentage_above_base = priority_mix.value.regular_percentage_above_base
     }
   }
 
-
-  dynamic "gallery_application" {
-    for_each = each.value.gallery_applications != null ? each.value.gallery_applications : []
-    content {
-
-      version_id             = gallery_application.value.version_id
-      configuration_blob_uri = gallery_application.value.configuration_blob_uri
-      order                  = gallery_application.value.order
-      tag                    = gallery_application.value.tag
-    }
-  }
-
-  dynamic "rolling_upgrade_policy" {
-    for_each = each.value.rolling_upgrade_policy != null ? [each.value.rolling_upgrade_policy] : []
-    content {
-      max_batch_instance_percent              = rolling_upgrade_policy.value.max_batch_instance_percent
-      max_unhealthy_instance_percent          = rolling_upgrade_policy.value.max_unhealthy_instance_percent
-      max_unhealthy_upgraded_instance_percent = rolling_upgrade_policy.value.max_unhealthy_upgraded_instance_percent
-      pause_time_between_batches              = rolling_upgrade_policy.value.pause_time_between_batches
-    }
-  }
-
-  # To be removed in version 4 of the provider
   dynamic "termination_notification" {
     for_each = each.value.termination_notification != null ? [each.value.termination_notification] : []
     content {
@@ -90,30 +122,6 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
       timeout = termination_notification.value.timeout
     }
   }
-
-  dynamic "additional_unattend_content" {
-    for_each = each.value.additional_unattend_content != null ? each.value.additional_unattend_content : []
-    content {
-      content = additional_unattend_content.value.content
-      setting = additional_unattend_content.value.setting
-    }
-  }
-
-  dynamic "secret" {
-    for_each = each.value.secrets != null ? each.value.secrets : []
-    content {
-      key_vault_id = secret.value.key_vault_id
-
-      dynamic "certificate" {
-        for_each = secret.value.certificates
-        content {
-          store = certificate.value.store
-          url   = certificate.value.url
-        }
-      }
-    }
-  }
-
 
   os_disk {
     caching                   = try(each.value.os_disk.caching, null)
@@ -134,35 +142,39 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
   dynamic "data_disk" {
     for_each = each.value.data_disk != null ? toset(each.value.data_disk) : []
     content {
-      lun                       = data_disk.value.lun
-      caching                   = data_disk.value.caching
-      storage_account_type      = data_disk.value.storage_account_type
-      disk_size_gb              = data_disk.value.disk_size_gb
-      write_accelerator_enabled = data_disk.value.write_accelerator_enabled
-      disk_encryption_set_id    = data_disk.value.disk_encryption_set_id
+      lun                            = data_disk.value.lun
+      create_option                  = data_disk.value.create_option
+      caching                        = data_disk.value.caching
+      storage_account_type           = data_disk.value.storage_account_type
+      disk_size_gb                   = data_disk.value.disk_size_gb
+      write_accelerator_enabled      = data_disk.value.write_accelerator_enabled
+      disk_encryption_set_id         = data_disk.value.disk_encryption_set_id
+      ultra_ssd_disk_iops_read_write = data_disk.value.ultra_ssd_disk_iops_read_write
+      ultra_ssd_disk_mbps_read_write = data_disk.value.ultra_ssd_disk_mbps_read_write
+
     }
   }
 
   dynamic "extension" {
     for_each = each.value.extension != null ? toset(each.value.extension) : []
     content {
-      name                       = extension.value.name
-      publisher                  = extension.value.publisher
-      type                       = extension.value.type
-      type_handler_version       = extension.value.type_handler_version
-      auto_upgrade_minor_version = extension.value.auto_upgrade_minor_version
-      automatic_upgrade_enabled  = extension.value.automatic_upgrade_enabled
-      force_update_tag           = extension.value.force_update_tag
-      provision_after_extensions = tolist(extension.value.provision_after_extensions)
-      settings                   = extension.value.settings
-      protected_settings         = extension.value.protected_settings
+      name                                = extension.value.name
+      publisher                           = extension.value.publisher
+      type                                = extension.value.type
+      type_handler_version                = extension.value.type_handler_version
+      auto_upgrade_minor_version_enabled  = extension.value.auto_upgrade_minor_version_enabled
+      failure_suppression_enabled         = extension.value.failure_suppression_enabled
+      force_extension_execution_on_change = extension.value.force_extension_execution_on_change
+      settings                            = extension.value.settings
+      protected_settings                  = extension.value.protected_settings
 
       dynamic "protected_settings_from_key_vault" {
-        for_each = extension.value.protected_settings_from_key_vault != null ? [extension.valueprotected_settings_from_key_vault] : []
+        for_each = extension.value.protected_settings_from_key_vault != null ? [
+          extension.value.protected_settings_from_key_vault
+        ] : []
         content {
-
-          secret_url      = ""
-          source_vault_id = ""
+          secret_url      = protected_settings_from_key_vault.value.secret_url
+          source_vault_id = protected_settings_from_key_vault.value.source_vault_id
         }
       }
 
@@ -170,11 +182,11 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
   }
 
   dynamic "boot_diagnostics" {
-    for_each = each.value.boot_diagnostics_storage_account_uri != null ? [
-      each.value.boot_diagnostics_storage_account_uri
-    ] : [null]
+    for_each = each.value.boot_diagnostics != null ? [
+      each.value.boot_diagnostics
+    ] : []
     content {
-      storage_account_uri = boot_diagnostics.value
+      storage_account_uri = boot_diagnostics.value.storage_account_uri
     }
   }
 
@@ -186,27 +198,6 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
       ultra_ssd_enabled = additional_capabilities.value.ultra_ssd_enabled
     }
   }
-
-  dynamic "automatic_os_upgrade_policy" {
-    for_each = each.value.automatic_os_upgrade_policy != null && each.value.automatic_os_upgrade_policy != {} ? [
-      each.value.automatic_os_upgrade_policy
-    ] : []
-    content {
-      disable_automatic_rollback  = automatic_os_upgrade_policy.value.disable_automatic_rollback
-      enable_automatic_os_upgrade = automatic_os_upgrade_policy.value.enable_automatic_os_upgrade
-    }
-  }
-
-  dynamic "automatic_instance_repair" {
-    for_each = each.value.automatic_instance_repair != null && each.value.automatic_instance_repair != {} ? [
-      each.value.automatic_instance_repair
-    ] : []
-    content {
-      enabled      = automatic_instance_repair.value.enabled
-      grace_period = automatic_instance_repair.value.grace_period
-    }
-  }
-
 
   dynamic "network_interface" {
     for_each = each.value.network_interface != null && each.value.network_interface != {} ? toset(each.value.network_interface) : []
@@ -231,10 +222,8 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
             ])) :
             [azurerm_application_security_group.asg[each.key].id]
           ) : []
-          load_balancer_backend_address_pool_ids = ip_configuration.value.load_balancer_backend_address_pool_ids
-          load_balancer_inbound_nat_rules_ids    = ip_configuration.value.load_balancer_inbound_nat_rules_ids
-          version                                = ip_configuration.value.version
-          subnet_id                              = ip_configuration.value.subnet_id
+          version   = ip_configuration.value.version
+          subnet_id = ip_configuration.value.subnet_id
 
           dynamic "public_ip_address" {
             for_each = ip_configuration.value.public_ip_address != null && ip_configuration.value.public_ip_address != {} ? [
@@ -331,7 +320,8 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
   dynamic "identity" {
     for_each = each.value.identity_type == "SystemAssigned" ? [each.value.identity_type] : []
     content {
-      type = each.value.identity_type
+      type         = each.value.identity_type
+      identity_ids = null
     }
   }
 
@@ -348,14 +338,6 @@ resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
     content {
       type         = each.value.identity_type
       identity_ids = length(try(each.value.identity_ids, [])) > 0 ? each.value.identity_ids : []
-    }
-  }
-
-  dynamic "winrm_listener" {
-    for_each = each.value.winrm_listener != null ? each.value.winrm_listener : []
-    content {
-      protocol        = winrm_listener.value.protocol
-      certificate_url = winrm_listener.value.certificate_url
     }
   }
 }
@@ -427,7 +409,7 @@ No requirements.
 | [azurerm_application_security_group.asg](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/application_security_group) | resource |
 | [azurerm_marketplace_agreement.plan_acceptance_custom](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/marketplace_agreement) | resource |
 | [azurerm_marketplace_agreement.plan_acceptance_simple](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/marketplace_agreement) | resource |
-| [azurerm_windows_virtual_machine_scale_set.windows_vm_scale_set](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/windows_virtual_machine_scale_set) | resource |
+| [azurerm_orchestrated_virtual_machine_scale_set.scale_set](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/orchestrated_virtual_machine_scale_set) | resource |
 
 ## Inputs
 
@@ -435,7 +417,7 @@ No requirements.
 |------|-------------|------|---------|:--------:|
 | <a name="input_location"></a> [location](#input\_location) | The region to place the resources | `string` | n/a | yes |
 | <a name="input_rg_name"></a> [rg\_name](#input\_rg\_name) | The resource group name to place the scale sets in | `string` | n/a | yes |
-| <a name="input_scale_sets"></a> [scale\_sets](#input\_scale\_sets) | The scale sets list of object variable | <pre>list(object({<br>    name                                              = string<br>    computer_name_prefix                              = optional(string)<br>    admin_username                                    = string<br>    admin_password                                    = string<br>    edge_zone                                         = optional(string)<br>    instances                                         = optional(number)<br>    sku                                               = optional(string)<br>    custom_data                                       = optional(string)<br>    disable_password_authentication                   = optional(bool)<br>    user_date                                         = optional(string)<br>    do_not_run_extensions_on_overprovisioned_machines = optional(bool)<br>    extensions_time_budget                            = optional(string)<br>    priority                                          = optional(string)<br>    max_bid_price                                     = optional(number)<br>    identity_type                                     = optional(string)<br>    identity_ids                                      = optional(list(string))<br>    eviction_policy                                   = optional(string)<br>    health_probe_id                                   = optional(string)<br>    timezone                                          = optional(string)<br>    overprovision                                     = optional(bool)<br>    create_asg                                        = optional(bool, false)<br>    asg_name                                          = optional(string)<br>    enable_automatic_updates                          = optional(bool)<br>    extension_operations_enabled                      = optional(bool)<br>    platform_fault_domain_count                       = optional(number)<br>    upgrade_mode                                      = optional(string)<br>    proximity_placement_group_id                      = optional(string)<br>    scale_in_policy                                   = optional(string)<br>    secure_boot_enabled                               = optional(bool)<br>    use_custom_image                                  = optional(bool, false)<br>    host_group_id                                     = optional(string)<br>    license_type                                      = optional(string)<br>    use_custom_image_with_plan                        = optional(bool, false)<br>    use_simple_image                                  = optional(bool, true)<br>    use_simple_image_with_plan                        = optional(bool, false)<br>    vm_os_id                                          = optional(string, "")<br>    vm_os_offer                                       = optional(string)<br>    vm_os_publisher                                   = optional(string)<br>    vm_os_simple                                      = optional(string)<br>    vm_os_sku                                         = optional(string)<br>    vm_os_version                                     = optional(string)<br>    spot_restore = optional(object({<br>      enabled = optional(bool)<br>      timeout = optional(number)<br>    }))<br>    scale_in = optional(object({<br>      rule                   = optional(string)<br>      force_deletion_enabled = optional(string)<br>    }))<br>    gallery_applications = optional(list(object({<br>      version_id             = string<br>      configuration_blob_uri = optional(string)<br>      order                  = optional(number)<br>      tag                    = optional(string)<br>    })))<br>    plan = optional(object({<br>      name      = optional(string)<br>      product   = optional(string)<br>      publisher = optional(string)<br>    }))<br>    source_image_reference = optional(object({<br>      publisher = optional(string)<br>      offer     = optional(string)<br>      sku       = optional(string)<br>      version   = optional(string)<br>    }))<br>    single_placement_group     = optional(bool)<br>    custom_source_image_id     = optional(string)<br>    vtpm_enabled               = optional(bool)<br>    zone_balance               = optional(bool)<br>    zones                      = optional(list(string))<br>    encryption_at_host_enabled = optional(bool)<br>    provision_vm_agent         = optional(bool)<br>    additional_unattend_content = optional(list(object({<br>      content = string<br>      setting = string<br>    })))<br>    winrm_listener = optional(list(object({<br>      protocol        = string<br>      certificate_url = optional(string)<br>    })))<br>    rolling_upgrade_policy = optional(object({<br>      max_batch_instance_percent              = optional(number)<br>      max_unhealthy_instance_percent          = optional(number)<br>      max_unhealthy_upgraded_instance_percent = optional(number)<br>      pause_time_between_batches              = optional(string)<br>    }))<br>    termination_notification = optional(object({<br>      enabled = optional(bool)<br>      timeout = optional(string)<br>    }))<br>    secrets = optional(list(object({<br>      key_vault_id = string<br>      certificates = list(object({<br>        store = string<br>        url   = string<br>      }))<br>    })))<br>    os_disk = object({<br>      caching                          = optional(string, "ReadWrite")<br>      storage_account_type             = optional(string)<br>      disk_size_gb                     = optional(number)<br>      disk_encryption_set_id           = optional(string)<br>      secure_vm_disk_encryption_set_id = optional(string)<br>      security_encryption_type         = optional(string)<br>      write_accelerator_enabled        = optional(bool)<br>      diff_disk_settings = optional(object({<br>        option    = string<br>        placement = optional(string)<br>      }))<br>    })<br>    data_disk = optional(list(object({<br>      lun                       = number<br>      caching                   = optional(string)<br>      storage_account_type      = optional(string)<br>      disk_size_gb              = optional(number)<br>      write_accelerator_enabled = optional(bool)<br>      disk_encryption_set_id    = optional(string)<br>    })))<br>    extension = optional(list(object({<br>      name                       = string<br>      publisher                  = string<br>      type                       = string<br>      type_handler_version       = string<br>      auto_upgrade_minor_version = optional(bool)<br>      automatic_upgrade_enabled  = optional(bool)<br>      force_update_tag           = optional(string)<br>      provision_after_extensions = optional(list(string))<br>      settings                   = optional(string)<br>      protected_settings         = optional(string)<br>      protected_settings_from_key_vault = optional(object({<br>        secret_url      = optional(string)<br>        source_vault_id = optional(string)<br>      }))<br>    })))<br>    boot_diagnostics_storage_account_uri = optional(string, null)<br>    additional_capabilities = optional(object({<br>      ultra_ssd_enabled = optional(bool)<br>    }))<br>    automatic_os_upgrade_policy = optional(object({<br>      disable_automatic_rollback  = optional(bool)<br>      enable_automatic_os_upgrade = optional(bool)<br>    }))<br>    automatic_instance_repair = optional(object({<br>      enabled      = optional(bool)<br>      grace_period = optional(string)<br>    }))<br>    network_interface = optional(list(object({<br>      name                          = optional(string)<br>      primary                       = optional(bool)<br>      network_security_group_id     = optional(string)<br>      enable_accelerated_networking = optional(bool)<br>      enable_ip_forwarding          = optional(bool)<br>      dns_servers                   = optional(list(string))<br>      ip_configuration = optional(list(object({<br>        name                                         = optional(string)<br>        primary                                      = optional(bool)<br>        application_gateway_backend_address_pool_ids = optional(list(string))<br>        application_security_group_ids               = optional(list(string))<br>        load_balancer_backend_address_pool_ids       = optional(list(string))<br>        load_balancer_inbound_nat_rules_ids          = optional(list(string))<br>        version                                      = optional(string)<br>        subnet_id                                    = optional(string)<br>        public_ip_address = optional(object({<br>          name                    = optional(string)<br>          domain_name_label       = optional(string)<br>          idle_timeout_in_minutes = optional(number)<br>          public_ip_prefix_id     = optional(string)<br>          ip_tag = optional(list(object({<br>            type = optional(string)<br>            tag  = optional(string)<br>          })))<br>        }))<br>      })))<br>    })))<br>  }))</pre> | n/a | yes |
+| <a name="input_scale_sets"></a> [scale\_sets](#input\_scale\_sets) | The scale sets list of object variable | <pre>list(object({<br>    name                         = string<br>    platform_fault_domain_count  = number<br>    sku                          = optional(string)<br>    computer_name_prefix         = optional(string)<br>    create_asg                   = optional(bool, false)<br>    asg_name                     = optional(string)<br>    use_custom_image             = optional(bool, false)<br>    use_custom_image_with_plan   = optional(bool, false)<br>    use_simple_image             = optional(bool, true)<br>    use_simple_image_with_plan   = optional(bool, false)<br>    vm_os_id                     = optional(string, "")<br>    vm_os_offer                  = optional(string)<br>    vm_os_publisher              = optional(string)<br>    vm_os_simple                 = optional(string)<br>    vm_os_sku                    = optional(string)<br>    vm_os_version                = optional(string)<br>    max_bid_price                = optional(string)<br>    priority                     = optional(string)<br>    user_data_base64             = optional(string)<br>    proximity_placement_group_id = optional(string)<br>    zone_balance                 = optional(bool, true)<br>    zones                        = optional(list(string))<br>    priority_mix = optional(object({<br>      base_regular_count            = optional(number)<br>      regular_percentage_above_base = optional(number)<br>    }))<br>    single_placement_group = optional(bool)<br>    termination_notification = optional(object({<br>      enabled = optional(bool)<br>      timeout = optional(string)<br>    }))<br>    source_image_reference = optional(object({<br>      publisher = optional(string)<br>      offer     = optional(string)<br>      sku       = optional(string)<br>      version   = optional(string)<br>    }))<br>    additional_capabilities = optional(object({<br>      ultra_ssd_enabled = optional(bool)<br>    }))<br>    encryption_at_host_enabled = optional(bool)<br>    automatic_instance_repair = optional(object({<br>      enabled      = optional(bool)<br>      grace_period = optional(string)<br>    }))<br>    instances = optional(number)<br>    boot_diagnostics = optional(object({<br>      storage_account_uri = optional(string)<br>    }))<br>    capacity_reservation_group_id = optional(string)<br>    extension_operations_enabled  = optional(bool)<br>    identity_type                 = optional(string)<br>    identity_ids                  = optional(list(string))<br>    extensions_time_budget        = optional(string)<br>    eviction_policy               = optional(string)<br>    license_type                  = optional(string)<br>    plan = optional(object({<br>      name      = optional(string)<br>      product   = optional(string)<br>      publisher = optional(string)<br>    }))<br>    extension = optional(list(object({<br>      name                                      = string<br>      publisher                                 = string<br>      type                                      = string<br>      type_handler_version                      = string<br>      auto_upgrade_minor_version_enabled        = optional(bool)<br>      failure_suppression_enabled               = optional(bool)<br>      force_extension_execution_on_change       = optional(string)<br>      extensions_to_provision_after_vm_creation = optional(list(string))<br>      settings                                  = optional(string)<br>      protected_settings                        = optional(string)<br>      protected_settings_from_key_vault = optional(object({<br>        secret_url      = optional(string)<br>        source_vault_id = optional(string)<br>      }))<br>    })))<br>    data_disk = optional(list(object({<br>      lun                            = optional(number)<br>      create_option                  = optional(string)<br>      caching                        = string<br>      storage_account_type           = optional(string)<br>      disk_size_gb                   = optional(number)<br>      disk_encryption_set_id         = optional(string)<br>      ultra_ssd_disk_iops_read_write = optional(string)<br>      ultra_ssd_disk_mbps_read_write = optional(string)<br>      write_accelerator_enabled      = optional(bool)<br>    })))<br>    os_disk = object({<br>      caching                          = optional(string, "ReadWrite")<br>      storage_account_type             = optional(string)<br>      disk_size_gb                     = optional(number)<br>      disk_encryption_set_id           = optional(string)<br>      secure_vm_disk_encryption_set_id = optional(string)<br>      security_encryption_type         = optional(string)<br>      write_accelerator_enabled        = optional(bool)<br>      diff_disk_settings = optional(object({<br>        option    = string<br>        placement = optional(string)<br>      }))<br>    })<br>    os_profile = optional(object({<br>      custom_data = optional(string)<br>      windows_configuration = optional(object({<br>        admin_username           = string<br>        admin_password           = string<br>        computer_name_prefix     = optional(string)<br>        enable_automatic_updates = optional(bool)<br>        hotpatching_enabled      = optional(bool)<br>        patch_assessment_mode    = optional(string)<br>        patch_mode               = optional(string)<br>        provision_vm_agent       = optional(bool)<br>        timezone                 = optional(string)<br>        additional_unattend_content = optional(list(object({<br>          content = string<br>          setting = string<br>        })))<br>        winrm_listener = optional(list(object({<br>          protocol        = string<br>          certificate_url = optional(string)<br>        })))<br>        secret = optional(list(object({<br>          key_vault_id = string<br>          certificate = list(object({<br>            store = string<br>            url   = string<br>          }))<br>        })))<br>      }))<br>      linux_configuration = optional(object({<br>        admin_username                  = string<br>        admin_password                  = optional(string)<br>        computer_name_prefix            = optional(string)<br>        disable_password_authentication = optional(bool)<br>        patch_assessment_mode           = optional(string)<br>        patch_mode                      = optional(string)<br>        provision_vm_agent              = optional(bool)<br>        secret = optional(list(object({<br>          key_vault_id = string<br>          certificate = list(object({<br>            store = string<br>            url   = string<br>          }))<br>        })))<br>        admin_ssh_key = optional(object({<br>          public_key = optional(string)<br>          username   = optional(string)<br>        }))<br>      }))<br>    }))<br>    network_interface = optional(list(object({<br>      name                          = optional(string)<br>      primary                       = optional(bool)<br>      network_security_group_id     = optional(string)<br>      enable_accelerated_networking = optional(bool)<br>      enable_ip_forwarding          = optional(bool)<br>      dns_servers                   = optional(list(string))<br>      ip_configuration = optional(list(object({<br>        name                                         = optional(string)<br>        primary                                      = optional(bool)<br>        application_gateway_backend_address_pool_ids = optional(list(string))<br>        application_security_group_ids               = optional(list(string))<br>        version                                      = optional(string)<br>        subnet_id                                    = optional(string)<br>        public_ip_address = optional(object({<br>          name                    = optional(string)<br>          domain_name_label       = optional(string)<br>          idle_timeout_in_minutes = optional(number)<br>          public_ip_prefix_id     = optional(string)<br>          ip_tag = optional(list(object({<br>            type = optional(string)<br>            tag  = optional(string)<br>          })))<br>        }))<br>      })))<br>    })))<br>  }))</pre> | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Tags to be applied to the resource | `map(string)` | n/a | yes |
 
 ## Outputs
