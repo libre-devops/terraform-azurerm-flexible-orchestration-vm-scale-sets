@@ -1,4 +1,4 @@
-resource "azurerm_windows_virtual_machine_scale_set" "windows_vm_scale_set" {
+resource "azurerm_orchestrated_virtual_machine_scale_set" "windows_vm_scale_set" {
   for_each            = { for vm in var.scale_sets : vm.name => vm }
   name                = each.value.name
   resource_group_name = var.rg_name
