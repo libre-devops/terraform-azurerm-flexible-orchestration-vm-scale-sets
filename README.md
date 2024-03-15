@@ -343,13 +343,13 @@ resource "azurerm_orchestrated_virtual_machine_scale_set" "scale_set" {
 }
 
 module "os_calculator" {
-  source       = "libre-devops/windows-os-sku-calculator/azurerm"
+  source       = "libre-devops/vm-os-sku-calculator/azurerm"
   for_each     = { for vm in var.scale_sets : vm.name => vm if try(vm.use_simple_image, null) == true }
   vm_os_simple = each.value.vm_os_simple
 }
 
 module "os_calculator_with_plan" {
-  source       = "libre-devops/windows-os-sku-with-plan-calculator/azurerm"
+  source       = "libre-devops/vm-os-sku-with-plan-calculator/azurerm"
   for_each     = { for vm in var.scale_sets : vm.name => vm if try(vm.use_simple_image_with_plan, null) == true }
   vm_os_simple = each.value.vm_os_simple
 }
@@ -399,8 +399,8 @@ No requirements.
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_os_calculator"></a> [os\_calculator](#module\_os\_calculator) | libre-devops/windows-os-sku-calculator/azurerm | n/a |
-| <a name="module_os_calculator_with_plan"></a> [os\_calculator\_with\_plan](#module\_os\_calculator\_with\_plan) | libre-devops/windows-os-sku-with-plan-calculator/azurerm | n/a |
+| <a name="module_os_calculator"></a> [os\_calculator](#module\_os\_calculator) | libre-devops/vm-os-sku-calculator/azurerm | n/a |
+| <a name="module_os_calculator_with_plan"></a> [os\_calculator\_with\_plan](#module\_os\_calculator\_with\_plan) | libre-devops/vm-os-sku-with-plan-calculator/azurerm | n/a |
 
 ## Resources
 
