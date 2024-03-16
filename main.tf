@@ -70,7 +70,7 @@ resource "azurerm_orchestrated_virtual_machine_scale_set" "scale_set" {
       }
 
       dynamic "linux_configuration" {
-        for_each = os_profile.value.linux_configuration != null ? [os_profile.linux_configuration] : []
+        for_each = os_profile.value.linux_configuration != null ? [os_profile.value.linux_configuration] : []
         content {
           admin_username                  = linux_configuration.value.admin_username
           admin_password                  = linux_configuration.value.admin_ssh_key != null && linux_configuration.value.disable_password_authentication == true ? null : linux_configuration.value.admin_password
@@ -313,22 +313,6 @@ resource "azurerm_orchestrated_virtual_machine_scale_set" "scale_set" {
       name      = lookup(each.value.plan, "name", null)
       product   = lookup(each.value.plan, "product", null)
       publisher = lookup(each.value.plan, "publisher", null)
-    }
-  }
-
-  dynamic "identity" {
-    for_each = each.value.identity_type == "SystemAssigned" ? [each.value.identity_type] : []
-    content {
-      type         = each.value.identity_type
-      identity_ids = null
-    }
-  }
-
-  dynamic "identity" {
-    for_each = each.value.identity_type == "SystemAssigned, UserAssigned" ? [each.value.identity_type] : []
-    content {
-      type         = each.value.identity_type
-      identity_ids = try(each.value.identity_ids, [])
     }
   }
 

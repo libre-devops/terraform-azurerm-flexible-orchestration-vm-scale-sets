@@ -31,7 +31,7 @@ variable "scale_sets" {
     priority                     = optional(string)
     user_data_base64             = optional(string)
     proximity_placement_group_id = optional(string)
-    zone_balance                 = optional(bool, true)
+    zone_balance                 = optional(bool)
     zones                        = optional(list(string))
     priority_mix = optional(object({
       base_regular_count            = optional(number)

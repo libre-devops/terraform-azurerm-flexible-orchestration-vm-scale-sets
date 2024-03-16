@@ -77,6 +77,19 @@ module "nsg" {
     }
   }
 }
+
+module "nat_gateway" {
+  source = "../../../terraform-azurerm-nat-gateway"
+
+  rg_name  = module.rg.rg_name
+  location = module.rg.rg_location
+  tags     = module.rg.rg_tags
+
+  name                       = "natgw-${var.short}-${var.loc}-${var.env}-01"
+  associate_nat_gw_to_subnet = true
+  subnet_id                  = module.network.subnets_ids["subnet1"]
+}
+
 #
 #module "bastion" {
 #  source = "libre-devops/bastion/azurerm"
@@ -141,26 +154,26 @@ module "windows_vm_scale_set" {
           computer_name_prefix     = "vmss1"
           enable_automatic_updates = true
           hotpatching_enabled      = false
-          patch_mode               = "AutomaticByPlatform"
-          patch_assessment_mode    = "AutomaticByPlatform"
-          provision_vm_agent       = true
-          timezone                 = "GMT Standard Time"
+          #          patch_mode               = "AutomaticByPlatform"
+          #          patch_assessment_mode    = "AutomaticByPlatform"
+          provision_vm_agent = true
+          timezone           = "GMT Standard Time"
         }
       }
 
       vm_os_simple = "WindowsServer2022AzureEditionGen2"
       create_asg   = true
 
-      identity_type = "SystemAssigned, UserAssigned"
+      identity_type = "UserAssigned"
       identity_ids  = [azurerm_user_assigned_identity.server_uid.id]
       network_interface = [
         {
-          name                          = "nic-${local.name}"
+          name                          = "nic-${local.name}win"
           primary                       = true
           enable_accelerated_networking = false
           ip_configuration = [
             {
-              name                           = "ipconfig-${local.name}"
+              name                           = "ipconfig-${local.name}win"
               primary                        = true
               subnet_id                      = module.network.subnets_ids["subnet1"]
               application_security_group_ids = [azurerm_application_security_group.server_asg.id]
@@ -176,7 +189,7 @@ module "windows_vm_scale_set" {
 
       extension = [
         {
-          name                       = "run-command-${local.name}"
+          name                       = "run-command-${local.name}win"
           publisher                  = "Microsoft.CPlat.Core"
           type                       = "RunCommandWindows"
           type_handler_version       = "1.1"
@@ -206,27 +219,27 @@ module "windows_vm_scale_set" {
             public_key = data.azurerm_ssh_public_key.mgmt_ssh_key.public_key
           }
 
-          computer_name_prefix  = "vmss2"
-          patch_mode            = "AutomaticByPlatform"
-          patch_assessment_mode = "AutomaticByPlatform"
-          provision_vm_agent    = true
-          timezone              = "GMT Standard Time"
+          computer_name_prefix = "vmss2"
+          #          patch_mode            = "AutomaticByPlatform"
+          #          patch_assessment_mode = "AutomaticByPlatform"
+          provision_vm_agent = true
+          timezone           = "GMT Standard Time"
         }
       }
 
-      vm_os_simple = "WindowsServer2022AzureEditionGen2"
-      create_asg   = true
+      vm_os_simple = "Ubuntu22.04"
+      create_asg   = false
 
       identity_type = "SystemAssigned, UserAssigned"
       identity_ids  = [azurerm_user_assigned_identity.server_uid.id]
       network_interface = [
         {
-          name                          = "nic-${local.name}"
+          name                          = "nic-${local.name}lnx"
           primary                       = true
           enable_accelerated_networking = false
           ip_configuration = [
             {
-              name                           = "ipconfig-${local.name}"
+              name                           = "ipconfig-${local.name}lnx"
               primary                        = true
               subnet_id                      = module.network.subnets_ids["subnet1"]
               application_security_group_ids = [azurerm_application_security_group.server_asg.id]
@@ -242,15 +255,13 @@ module "windows_vm_scale_set" {
 
       extension = [
         {
-          name                       = "run-command-${local.name}"
+          name                       = "run-command-${local.name}lnx"
           publisher                  = "Microsoft.CPlat.Core"
-          type                       = "RunCommandWindows"
-          type_handler_version       = "1.1"
+          type                       = "RunCommandLinux"
+          type_handler_version       = "1.0"
           auto_upgrade_minor_version = true
-          settings = jsonencode({
-            script = [
-              "try { Install-WindowsFeature -Name FS-FileServer -IncludeManagementTools } catch { Write-Error 'Failed to install File Services: $_'; exit 1 }"
-            ]
+          protected_settings = jsonencode({
+            commandToExecute = tostring("apt-get update && apt-get dist-upgrade && apt-get install -y nginx")
           })
         }
       ]
@@ -266,13 +277,14 @@ No requirements.
 
 | Name | Version |
 |------|---------|
-| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 3.91.0 |
+| <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) | 3.96.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | 3.6.0 |
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
+| <a name="module_nat_gateway"></a> [nat\_gateway](#module\_nat\_gateway) | ../../../terraform-azurerm-nat-gateway | n/a |
 | <a name="module_network"></a> [network](#module\_network) | libre-devops/network/azurerm | n/a |
 | <a name="module_nsg"></a> [nsg](#module\_nsg) | libre-devops/nsg/azurerm | n/a |
 | <a name="module_rg"></a> [rg](#module\_rg) | libre-devops/rg/azurerm | n/a |
